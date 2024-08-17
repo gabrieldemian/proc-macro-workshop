@@ -43,6 +43,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
     // a: 0,
     let mut struct_name_value = Vec::new();
 
+    // methods of the builder
+    // pub fn #ident(&mut self, v: #ty) -> &mut Self
+    let mut method = Vec::new();
+
     for field in struct_field {
         let ident = field.ident.as_ref().unwrap();
         let ty = &field.ty;
@@ -54,6 +58,12 @@ pub fn derive(input: TokenStream) -> TokenStream {
         struct_name_value.push(quote! {
             #ident: None,
         });
+        method.push(quote!{
+            pub fn #ident(&mut self, v: #ty) -> &mut Self {
+                self.#ident = Some(v);
+                self
+            }
+        });
     }
 
     let expr = quote! {
@@ -61,6 +71,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
             #(
                 #struct_name_type
             )*
+        }
+
+        impl #builder_name {
+            #(#method)*
         }
 
         impl #struct_name {
