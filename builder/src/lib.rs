@@ -58,7 +58,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         struct_name_value.push(quote! {
             #ident: None,
         });
-        method.push(quote!{
+        method.push(quote! {
             pub fn #ident(&mut self, v: #ty) -> &mut Self {
                 self.#ident = Some(v);
                 self
@@ -75,6 +75,16 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
         impl #builder_name {
             #(#method)*
+
+            pub fn build(&mut self) -> Result<#struct_name, Box<dyn std::error::Error>> {
+                Ok(#struct_name {
+                    #(
+                        #struct_ident: self.#struct_ident
+                            .clone()
+                            .ok_or("field not set")?,
+                    )*
+                })
+            }
         }
 
         impl #struct_name {
