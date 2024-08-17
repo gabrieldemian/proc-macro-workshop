@@ -5,6 +5,9 @@ edition = "2021"
 publish = false
 
 [workspace]
+[workspace.dependencies]
+quote = "1.0.36"
+syn = "2.0.74"
 
 [[bin]]
 name = "workshop"
@@ -14,5 +17,5 @@ path = "main.rs"
 bitfield = { path = "bitfield" }
 derive_builder = { path = "builder" }
 derive_debug = { path = "debug" }
-seq = { path = "seq" }
 sorted = { path = "sorted" }
+seq = { path = "seq" }
