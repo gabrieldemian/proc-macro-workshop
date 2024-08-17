@@ -49,10 +49,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
         struct_ident.push(quote! {#ident});
         struct_name_type.push(quote! {
-            #ident: #ty,
+            #ident: Option<#ty>,
         });
         struct_name_value.push(quote! {
-            #ident: <#ty>::default(),
+            #ident: None,
         });
     }
 
