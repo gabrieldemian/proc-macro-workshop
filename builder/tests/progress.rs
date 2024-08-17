@@ -1,8 +1,20 @@
+use derive_builder::Builder;
+
 #[test]
 fn tests() {
+    #[derive(Builder)]
+    pub struct Command {
+        executable: String,
+        args: Vec<String>,
+        env: Vec<String>,
+        current_dir: String,
+    }
+
+    let builder = Command::builder();
+
     let t = trybuild::TestCases::new();
     t.pass("tests/01-parse.rs");
-    //t.pass("tests/02-create-builder.rs");
+    t.pass("tests/02-create-builder.rs");
     //t.pass("tests/03-call-setters.rs");
     //t.pass("tests/04-call-build.rs");
     //t.pass("tests/05-method-chaining.rs");
