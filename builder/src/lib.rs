@@ -6,7 +6,52 @@ use syn::{
     PathArguments, Type, TypePath,
 };
 
-#[proc_macro_derive(Builder)]
+fn extract_type_from_option(ty: &syn::Type) -> Option<&syn::Type> {
+    use syn::{GenericArgument, Path, PathArguments, PathSegment};
+
+    fn extract_type_path(ty: &syn::Type) -> Option<&Path> {
+        match *ty {
+            syn::Type::Path(ref typepath) if typepath.qself.is_none() => {
+                Some(&typepath.path)
+            }
+            _ => None,
+        }
+    }
+
+    // TODO store (with lazy static) the vec of string
+    // TODO maybe optimization, reverse the order of segments
+    fn extract_option_segment(path: &Path) -> Option<&PathSegment> {
+        let idents_of_path =
+            path.segments.iter().fold(String::new(), |mut acc, v| {
+                acc.push_str(&v.ident.to_string());
+                acc.push('|');
+                acc
+            });
+        vec!["Option|", "std|option|Option|", "core|option|Option|"]
+            .into_iter()
+            .find(|s| idents_of_path == *s)
+            .and_then(|_| path.segments.last())
+    }
+
+    extract_type_path(ty)
+        .and_then(|path| extract_option_segment(path))
+        .and_then(|path_seg| {
+            let type_params = &path_seg.arguments;
+            // It should have only on angle-bracketed param ("<String>"):
+            match *type_params {
+                PathArguments::AngleBracketed(ref params) => {
+                    params.args.first()
+                }
+                _ => None,
+            }
+        })
+        .and_then(|generic_arg| match *generic_arg {
+            GenericArgument::Type(ref ty) => Some(ty),
+            _ => None,
+        })
+}
+
+#[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
@@ -53,63 +98,33 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     for field in struct_field {
         let ident = field.ident.as_ref().unwrap();
-        let ty = &field.ty;
+        let mut ty = &field.ty;
 
-        let (is_option, inner_ty_option) = if let Type::Path(TypePath {
-            path: Path { ref segments, .. },
-            ..
-        }) = ty
-        {
-            let segment = segments.first().unwrap();
-            let outer = &segment.ident;
-            let is_opt = *outer.to_string() == *"Option";
+        let opt = extract_type_from_option(ty);
+        let is_option = opt.is_some();
 
-            if let PathArguments::AngleBracketed(
-                AngleBracketedGenericArguments { ref args, .. },
-            ) = segment.arguments
-            {
-                if let GenericArgument::Type(inner) = args.first().unwrap() {
-                    eprintln!("inner {:?}", inner);
-                    (is_opt, inner)
-                } else {
-                    unimplemented!()
-                }
-            } else {
-                (false, ty)
-            }
-        } else {
-            (false, ty)
-        };
+        if let Some(opt) = opt {
+            ty = opt;
+        }
+
+        struct_name_type.push(quote! {
+            #ident: Option<#ty>,
+        });
 
         if is_option {
             struct_ident_opt.push(ident);
-            struct_name_type.push(quote! {
-                #ident: #ty,
-            });
         } else {
             struct_ident.push(ident);
-            struct_name_type.push(quote! {
-                #ident: Option<#ty>,
-            });
         }
 
         struct_name_value.push(quote! {
             #ident: None,
         });
 
-        method.push(if is_option {
-            quote! {
-                pub fn #ident(&mut self, v: #inner_ty_option) -> &mut Self {
-                    self.#ident = Some(v);
-                    self
-                }
-            }
-        } else {
-            quote! {
-                pub fn #ident(&mut self, v: #ty) -> &mut Self {
-                    self.#ident = Some(v);
-                    self
-                }
+        method.push(quote! {
+            pub fn #ident(&mut self, v: #ty) -> &mut Self {
+                self.#ident = Some(v);
+                self
             }
         });
     }
@@ -129,7 +144,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     #(
                         #struct_ident: self.#struct_ident
                             .clone()
-                            .ok_or("field not set")?,
+                            .ok_or(concat!(stringify!(#struct_name), " not set"))?,
                     )*
                     #(
                         #struct_ident_opt: self.#struct_ident_opt

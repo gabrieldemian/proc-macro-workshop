@@ -2,20 +2,21 @@ use derive_builder::Builder;
 
 #[test]
 fn tests() {
-    #[derive(Builder)]
-    pub struct Command {
-        executable: String,
-        args: Vec<String>,
-        env: Vec<String>,
-        current_dir: Option<String>,
-    }
-
-    let command = Command::builder()
-        .executable("cargo".to_owned())
-        .args(vec!["build".to_owned(), "--release".to_owned()])
-        .env(vec![])
-        .build()
-        .unwrap();
+    // #[derive(Builder)]
+    // pub struct Command {
+    //     executable: String,
+    //     // #[builder(each = "arg")]
+    //     // args: Vec<String>,
+    //     // #[builder(each = "env")]
+    //     env: Vec<String>,
+    //     current_dir: Option<String>,
+    // }
+    // let command = Command::builder()
+    //     .executable("cargo".to_owned())
+    //     .args(vec!["build".to_owned(), "--release".to_owned()])
+    //     .env(vec![])
+    //     .build()
+    //     .unwrap();
 
     let t = trybuild::TestCases::new();
     t.pass("tests/01-parse.rs");
