@@ -21,15 +21,19 @@ use syn::{
 fn extract_inner_type<'a>(
     ty: &'a syn::Type,
     outter: &'a syn::Ident,
-) -> Option<syn::Type> {
-    let syn::Type::Path(TypePath { qself: None, ref path }) = ty else {
-        return None;
+) -> std::option::Option<syn::Type> {
+    let syn::Type::Path(TypePath {
+        qself: std::option::Option::None,
+        ref path,
+    }) = ty
+    else {
+        return std::option::Option::None;
     };
 
     let segment = path.segments.first()?;
 
     if segment.ident != *outter {
-        return None;
+        return std::option::Option::None;
     }
 
     let PathArguments::AngleBracketed(AngleBracketedGenericArguments {
@@ -37,35 +41,37 @@ fn extract_inner_type<'a>(
         ..
     }) = segment.arguments
     else {
-        return None;
+        return std::option::Option::None;
     };
     let GenericArgument::Type(Type::Path(TypePath { qself: None, path })) =
         args.first()?
     else {
-        return None;
+        return std::option::Option::None;
     };
 
     path.segments.first()?;
 
-    Some(Type::Path(TypePath { qself: None, path: path.clone() }))
+    Some(Type::Path(TypePath {
+        qself: std::option::Option::None,
+        path: path.clone(),
+    }))
 }
 
-struct StructField {
-    // only accept #[builder(arg = "x")]
-    attrs: Vec<Attribute>,
-    name: Ident,
-    ty: Type,
-}
-
-impl Parse for StructField {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(StructField {
-            attrs: input.call(Attribute::parse_outer)?,
-            name: input.parse()?,
-            ty: input.parse()?,
-        })
-    }
-}
+// struct StructField {
+//     // only accept #[builder(arg = "x")]
+//     attrs: Vec<Attribute>,
+//     name: Ident,
+//     ty: Type,
+// }
+// impl Parse for StructField {
+//     fn parse(input: ParseStream) -> Result<Self> {
+//         Ok(StructField {
+//             attrs: input.call(Attribute::parse_outer)?,
+//             name: input.parse()?,
+//             ty: input.parse()?,
+//         })
+//     }
+// }
 
 #[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -124,7 +130,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             extract_inner_type(&ty, &syn::parse_str("Vec").unwrap());
         let is_vec = vec_inner_ty.is_some();
 
-        if let Some(opt_inner) = opt_inner_ty {
+        if let std::option::Option::Some(opt_inner) = opt_inner_ty {
             ty = opt_inner;
         }
 
@@ -137,10 +143,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
             });
         } else {
             struct_name_type.push(quote! {
-                #ident: Option<#ty>,
+                #ident: std::option::Option<#ty>,
             });
             struct_name_value.push(quote! {
-                #ident: None,
+                #ident: std::option::Option::None,
             });
         }
 
@@ -210,7 +216,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         } else {
             quote! {
                 pub fn #ident(&mut self, v: #ty) -> &mut Self {
-                    self.#ident = Some(v);
+                    self.#ident = std::option::Option::Some(v);
                     self
                 }
             }
@@ -229,7 +235,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         impl #builder_name {
             #(#method)*
 
-            pub fn build(&mut self) -> Result<#struct_name, Box<dyn std::error::Error>> {
+            pub fn build(&mut self) -> std::result::Result<#struct_name, std::boxed::Box<dyn std::error::Error>> {
                 Ok(#struct_name {
                     #(
                         #struct_ident: self.#struct_ident
