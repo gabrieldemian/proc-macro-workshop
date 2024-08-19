@@ -11,8 +11,7 @@ use syn::{
 /// Try to extract the inner type of a type:
 /// example: Option<T> or Vec<T>
 ///
-/// Return: (inner, outter)
-/// (T, Option)
+/// Return: inner
 ///
 /// ```ignore
 /// let t: Ident = syn::parse_str("std::vec::Vec<String>")?;
@@ -20,13 +19,17 @@ use syn::{
 /// ```
 fn extract_inner_type<'a>(
     ty: &'a syn::Type,
-    inner: &'a syn::Ident,
-) -> Option<(syn::Ident, syn::Type)> {
+    outter: &'a syn::Ident,
+) -> Option<syn::Type> {
     let syn::Type::Path(TypePath { qself: None, ref path }) = ty else {
         return None;
     };
 
-    let segment = path.segments.last()?;
+    let segment = path.segments.first()?;
+
+    if segment.ident != *outter {
+        return None;
+    }
 
     let PathArguments::AngleBracketed(AngleBracketedGenericArguments {
         ref args,
@@ -36,66 +39,17 @@ fn extract_inner_type<'a>(
         return None;
     };
     let GenericArgument::Type(Type::Path(TypePath { qself: None, path })) =
-        args.last()?
+        args.first()?
     else {
         return None;
     };
 
-    let inner_found = &path.segments.last()?.ident;
+    path.segments.first()?;
 
-    if inner == inner_found {
-        Some((
-            inner.clone(),
-            Type::Path(TypePath { qself: None, path: path.clone() }),
-        ))
-    } else {
-        None
-    }
-}
+    // let toreturn = Type::Path(TypePath { qself: None, path: path.clone() });
+    // println!("passed {toreturn:#?}");
 
-fn extract_type_from_option(ty: &syn::Type) -> Option<&syn::Type> {
-    use syn::{GenericArgument, Path, PathArguments, PathSegment};
-
-    fn extract_type_path(ty: &syn::Type) -> Option<&Path> {
-        match *ty {
-            syn::Type::Path(ref typepath) if typepath.qself.is_none() => {
-                Some(&typepath.path)
-            }
-            _ => None,
-        }
-    }
-
-    // TODO store (with lazy static) the vec of string
-    // TODO maybe optimization, reverse the order of segments
-    fn extract_option_segment(path: &Path) -> Option<&PathSegment> {
-        let idents_of_path =
-            path.segments.iter().fold(String::new(), |mut acc, v| {
-                acc.push_str(&v.ident.to_string());
-                acc.push('|');
-                acc
-            });
-        vec!["Option|", "std|option|Option|", "core|option|Option|"]
-            .into_iter()
-            .find(|s| idents_of_path == *s)
-            .and_then(|_| path.segments.last())
-    }
-
-    extract_type_path(ty)
-        .and_then(|path| extract_option_segment(path))
-        .and_then(|path_seg| {
-            let type_params = &path_seg.arguments;
-            // It should have only on angle-bracketed param ("<String>"):
-            match *type_params {
-                PathArguments::AngleBracketed(ref params) => {
-                    params.args.first()
-                }
-                _ => None,
-            }
-        })
-        .and_then(|generic_arg| match *generic_arg {
-            GenericArgument::Type(ref ty) => Some(ty),
-            _ => None,
-        })
+    Some(Type::Path(TypePath { qself: None, path: path.clone() }))
 }
 
 struct StructField {
@@ -161,69 +115,53 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let mut method = Vec::new();
 
     for field in struct_field {
-        let attr = &field.attrs;
-
         let ident = field.ident.as_ref().unwrap();
-        let mut ty = &field.ty;
+        let mut ty = field.ty.clone();
 
-        let is_vec = if let Type::Path(TypePath {
-            qself: None,
-            path: syn::Path { segments, .. },
-        }) = &ty
-        {
-            let q = &segments[0].ident;
-            eprintln!("segments {:#?}", &segments);
-            q == "Vec"
-        } else {
-            false
-        };
+        // let vec = extract_inner_type(&ty, &syn::parse_str("Vec").unwrap());
+        // let is_vec = vec.is_some();
+        // let attr = &field.attrs;
+        // if !attr.is_empty() {
+        //     let att = &attr[0];
+        //     let parsed: MetaNameValue = att.parse_args().unwrap();
+        //     let key = &parsed.path.segments[0].ident;
+        //     let Expr::Lit(ExprLit { lit: Lit::Str(value), .. }) =
+        // &parsed.value     else {
+        //         panic!("Wrong attribute syntax for builder");
+        //     };
+        //
+        //     // remove quotes from the string
+        //     let value: Ident = value.parse().unwrap();
+        //
+        //     if !is_vec {
+        //         panic!("Wrong syntax for builder, can only use 'each' for a
+        // Vec type");     };
+        //
+        //     if key == "each" {
+        //         let topush = quote! {
+        //             pub fn #value(&mut self, v: String) -> &mut Self {
+        //                 self.#ident.push(v);
+        //                 self
+        //             }
+        //         };
+        //         // eprintln!("topush {}", topush);
+        //         method.push(topush);
+        //     }
+        // }
 
-        if !attr.is_empty() {
-            let att = &attr[0];
-            let parsed: MetaNameValue = att.parse_args().unwrap();
-            let key = &parsed.path.segments[0].ident;
-            let Expr::Lit(ExprLit { lit: Lit::Str(value), .. }) = &parsed.value
-            else {
-                panic!("Wrong attribute syntax for builder");
-            };
+        eprintln!("{ty:#?}");
 
-            // remove quotes from the string
-            let value: Ident = value.parse().unwrap();
-
-            if !is_vec {
-                panic!("Wrong syntax for builder, can only use 'each' for a Vec type");
-            };
-
-            if key == "each" {
-                let topush = quote! {
-                    pub fn #value(&mut self, v: String) -> &mut Self {
-                        self.#ident.push(v);
-                        self
-                    }
-                };
-                // eprintln!("topush {}", topush);
-                method.push(topush);
-            }
-        }
-
-        let opt = extract_type_from_option(ty);
+        let opt = extract_inner_type(&ty, &syn::parse_str("Option").unwrap());
         let is_option = opt.is_some();
-
-        eprintln!("is_option {is_option} is_vec {is_vec}");
+        eprintln!("is_option {is_option}");
 
         if let Some(opt) = opt {
             ty = opt;
         }
 
-        if is_vec {
-            struct_name_type.push(quote! {
-                #ident: #ty,
-            });
-        } else {
-            struct_name_type.push(quote! {
-                #ident: Option<#ty>,
-            });
-        }
+        struct_name_type.push(quote! {
+            #ident: Option<#ty>,
+        });
 
         if is_option {
             struct_ident_opt.push(ident);
@@ -235,19 +173,26 @@ pub fn derive(input: TokenStream) -> TokenStream {
             #ident: None,
         });
 
-        let topush = if is_vec {
-            quote! {
-                pub fn #ident(&mut self, v: #ty) -> &mut Self {
-                    self.#ident.extend_from_slice(&v);
-                    self
-                }
-            }
-        } else {
-            quote! {
-                pub fn #ident(&mut self, v: #ty) -> &mut Self {
-                    self.#ident = Some(v);
-                    self
-                }
+        // let topush = if is_vec {
+        //     quote! {
+        //         pub fn #ident(&mut self, v: #ty) -> &mut Self {
+        //             self.#ident.extend_from_slice(&v);
+        //             self
+        //         }
+        //     }
+        // } else {
+        //     quote! {
+        //         pub fn #ident(&mut self, v: #ty) -> &mut Self {
+        //             self.#ident = Some(v);
+        //             self
+        //         }
+        //     }
+        // };
+
+        let topush = quote! {
+            pub fn #ident(&mut self, v: #ty) -> &mut Self {
+                self.#ident = Some(v);
+                self
             }
         };
 
