@@ -118,81 +118,93 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let ident = field.ident.as_ref().unwrap();
         let mut ty = field.ty.clone();
 
-        // let vec = extract_inner_type(&ty, &syn::parse_str("Vec").unwrap());
-        // let is_vec = vec.is_some();
-        // let attr = &field.attrs;
-        // if !attr.is_empty() {
-        //     let att = &attr[0];
-        //     let parsed: MetaNameValue = att.parse_args().unwrap();
-        //     let key = &parsed.path.segments[0].ident;
-        //     let Expr::Lit(ExprLit { lit: Lit::Str(value), .. }) =
-        // &parsed.value     else {
-        //         panic!("Wrong attribute syntax for builder");
-        //     };
-        //
-        //     // remove quotes from the string
-        //     let value: Ident = value.parse().unwrap();
-        //
-        //     if !is_vec {
-        //         panic!("Wrong syntax for builder, can only use 'each' for a
-        // Vec type");     };
-        //
-        //     if key == "each" {
-        //         let topush = quote! {
-        //             pub fn #value(&mut self, v: String) -> &mut Self {
-        //                 self.#ident.push(v);
-        //                 self
-        //             }
-        //         };
-        //         // eprintln!("topush {}", topush);
-        //         method.push(topush);
-        //     }
-        // }
+        let opt_inner_ty =
+            extract_inner_type(&ty, &syn::parse_str("Option").unwrap());
+        let is_option = opt_inner_ty.is_some();
 
-        eprintln!("{ty:#?}");
+        let vec_inner_ty =
+            extract_inner_type(&ty, &syn::parse_str("Vec").unwrap());
+        let is_vec = vec_inner_ty.is_some();
 
-        let opt = extract_inner_type(&ty, &syn::parse_str("Option").unwrap());
-        let is_option = opt.is_some();
-        eprintln!("is_option {is_option}");
-
-        if let Some(opt) = opt {
-            ty = opt;
+        if let Some(opt_inner) = opt_inner_ty {
+            ty = opt_inner;
         }
 
-        struct_name_type.push(quote! {
-            #ident: Option<#ty>,
-        });
+        if is_vec {
+            struct_name_type.push(quote! {
+                #ident: #ty,
+            });
+            struct_name_value.push(quote! {
+                #ident: Vec::new(),
+            });
+        } else {
+            struct_name_type.push(quote! {
+                #ident: Option<#ty>,
+            });
+            struct_name_value.push(quote! {
+                #ident: None,
+            });
+        }
 
-        if is_option {
+        if is_option || is_vec {
             struct_ident_opt.push(ident);
         } else {
             struct_ident.push(ident);
         }
 
-        struct_name_value.push(quote! {
-            #ident: None,
-        });
+        let attr = &field.attrs;
 
-        // let topush = if is_vec {
-        //     quote! {
-        //         pub fn #ident(&mut self, v: #ty) -> &mut Self {
-        //             self.#ident.extend_from_slice(&v);
-        //             self
-        //         }
-        //     }
-        // } else {
-        //     quote! {
-        //         pub fn #ident(&mut self, v: #ty) -> &mut Self {
-        //             self.#ident = Some(v);
-        //             self
-        //         }
-        //     }
-        // };
+        if !attr.is_empty() {
+            let att = &attr[0];
+            let parsed: MetaNameValue = att.parse_args().unwrap();
+            let key = &parsed.path.segments[0].ident;
+            let Expr::Lit(ExprLit { lit: Lit::Str(value), .. }) = &parsed.value
+            else {
+                panic!("Wrong attribute syntax for builder");
+            };
 
-        let topush = quote! {
-            pub fn #ident(&mut self, v: #ty) -> &mut Self {
-                self.#ident = Some(v);
-                self
+            // remove quotes from the string
+            // the name of the new method that pushes types to the vec
+            let value: Ident = value.parse().unwrap();
+
+            let Some(vec_inner_ty) = vec_inner_ty else {
+                panic!(
+                    "Wrong syntax for builder, can only use 'each' for a
+        Vec type"
+                );
+            };
+
+            if key == "each" {
+                let topush = quote! {
+                    pub fn #value(&mut self, v: #vec_inner_ty) -> &mut Self {
+                        self.#ident.push(v);
+                        self
+                    }
+                };
+                // eprintln!("topush {}", topush);
+                method.push(topush);
+            }
+
+            // if the new method name is the same as the attribute, skip adding
+            // it again, continue to the next iteration
+            if value == *ident {
+                continue;
+            }
+        }
+
+        let topush = if is_vec {
+            quote! {
+                pub fn #ident(&mut self, v: #ty) -> &mut Self {
+                    self.#ident.extend_from_slice(&v);
+                    self
+                }
+            }
+        } else {
+            quote! {
+                pub fn #ident(&mut self, v: #ty) -> &mut Self {
+                    self.#ident = Some(v);
+                    self
+                }
             }
         };
 
@@ -214,11 +226,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     #(
                         #struct_ident: self.#struct_ident
                             .clone()
-                            .ok_or(concat!(stringify!(#struct_name), " not set"))?,
+                            .ok_or(concat!(stringify!(#struct_ident), " not set"))?,
                     )*
                     #(
                         #struct_ident_opt: self.#struct_ident_opt
-                            .clone()
+                            .clone(),
                     )*
                 })
             }
