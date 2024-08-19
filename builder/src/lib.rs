@@ -2,10 +2,11 @@ use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream, Parser},
-    parse_macro_input, AngleBracketedGenericArguments, Attribute, Data,
-    DataStruct, DeriveInput, Expr, ExprLit, Fields, FieldsNamed,
-    GenericArgument, Ident, Lit, MetaNameValue, PathArguments, Result, Token,
-    Type, TypePath,
+    parse_macro_input,
+    spanned::Spanned,
+    AngleBracketedGenericArguments, Attribute, Data, DataStruct, DeriveInput,
+    Expr, ExprLit, Fields, FieldsNamed, GenericArgument, Ident, Lit,
+    MetaNameValue, PathArguments, Result, Token, Type, TypePath,
 };
 
 /// Try to extract the inner type of a type:
@@ -45,9 +46,6 @@ fn extract_inner_type<'a>(
     };
 
     path.segments.first()?;
-
-    // let toreturn = Type::Path(TypePath { qself: None, path: path.clone() });
-    // println!("passed {toreturn:#?}");
 
     Some(Type::Path(TypePath { qself: None, path: path.clone() }))
 }
@@ -156,8 +154,12 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
         if !attr.is_empty() {
             let att = &attr[0];
+            let span = att.meta.span();
+
             let parsed: MetaNameValue = att.parse_args().unwrap();
+
             let key = &parsed.path.segments[0].ident;
+
             let Expr::Lit(ExprLit { lit: Lit::Str(value), .. }) = &parsed.value
             else {
                 panic!("Wrong attribute syntax for builder");
@@ -181,8 +183,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         self
                     }
                 };
-                // eprintln!("topush {}", topush);
                 method.push(topush);
+            } else {
+                return syn::Error::new(
+                    span,
+                    "expected `builder(each = \"...\")`",
+                )
+                .to_compile_error()
+                .into();
             }
 
             // if the new method name is the same as the attribute, skip adding
